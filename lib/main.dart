@@ -78,6 +78,7 @@ class BluetoothControllerState extends State<BluetoothController> {
   void _connect(Device device) async {
     setState(() {
       isConnecting = true;
+      _isConnected = false;
     });
 
     if (_device != null) {
@@ -90,13 +91,28 @@ class BluetoothControllerState extends State<BluetoothController> {
       setState(() {
         _device = device;
         isConnecting = false;
+        _isConnected = true;
       });
     } catch (e) {
       setState(() {
         isConnecting = false;
       });
       developer.log('Error connecting to device: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("No se pudo conectar al dispositivo. Asegúrese de que esté encendido y dentro del alcance."),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
+
+  void _disconnect() async {
+    await _bluetoothClassicPlugin.disconnect();
+    setState(() {
+      _isConnected = false;
+    });
   }
 
   void _sendCommand(String command) async {
@@ -141,11 +157,19 @@ class BluetoothControllerState extends State<BluetoothController> {
                         style: const TextStyle(fontSize: 18),
                       ),
                       const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        icon: const Icon(LucideIcons.search),
-                        label: const Text('Buscar Dispositivos'),
-                        onPressed: () => _showDevicesDialog(),
-                      ),
+                      if (!_isConnected)
+                        ElevatedButton.icon(
+                          icon: const Icon(LucideIcons.search),
+                          label: const Text('Buscar Dispositivos'),
+                          onPressed: () => _showDevicesDialog(),
+                        )
+                      else
+                        ElevatedButton.icon(
+                          icon: const Icon(LucideIcons.bluetoothOff),
+                          label: const Text('Desconectar'),
+                          onPressed: _disconnect,
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        ),
                     ],
                   ),
                 ),
@@ -160,21 +184,25 @@ class BluetoothControllerState extends State<BluetoothController> {
                 roomName: 'Sala de Estar (L1)',
                 onCommand: _sendCommand,
                 label: 'L1',
+                isEnabled: _isConnected,
               ),
               LightControl(
                 roomName: 'Cocina (L2)',
                 onCommand: _sendCommand,
                 label: 'L2',
+                isEnabled: _isConnected,
               ),
               LightControl(
                 roomName: 'Dormitorio Principal (L3)',
                 onCommand: _sendCommand,
                 label: 'L3',
+                isEnabled: _isConnected,
               ),
               LightControl(
                 roomName: 'Baño (L4)',
                 onCommand: _sendCommand,
                 label: 'L4',
+                isEnabled: _isConnected,
               ),
               const SizedBox(height: 20),
               // --- control de puerta ---
@@ -190,12 +218,12 @@ class BluetoothControllerState extends State<BluetoothController> {
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorOpen),
                         label: const Text('ABRIR PUERTA'),
-                        onPressed: () => _sendCommand('P:180'),
+                        onPressed: _isConnected ? () => _sendCommand('P:180') : null,
                       ),
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorClosed),
                         label: const Text('CERRAR PUERTA'),
-                        onPressed: () => _sendCommand('P:0'),
+                        onPressed: _isConnected ? () => _sendCommand('P:0') : null,
                       ),
                     ],
                   ),
@@ -241,12 +269,14 @@ class LightControl extends StatefulWidget {
   final String roomName;
   final Function(String) onCommand;
   final String label;
+  final bool isEnabled;
 
   const LightControl({
     super.key,
     required this.roomName,
     required this.onCommand,
     required this.label,
+    this.isEnabled = false,
   });
 
   @override
@@ -284,43 +314,46 @@ class LightControlState extends State<LightControl> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(widget.roomName, style: const TextStyle(fontSize: 18)),
-                ),
-                Switch(
-                  value: _isOn,
-                  onChanged: _onSwitchChanged,
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(LucideIcons.lightbulb),
-                Expanded(
-                  child: Slider(
-                    value: _intensity,
-                    min: 0,
-                    max: 100,
-                    divisions: 100,
-                    label: _intensity.round().toString(),
-                    onChanged: (value) {
-                      _onSliderChanged(value);
-                    },
+      child: Opacity(
+        opacity: widget.isEnabled ? 1.0 : 0.5,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(widget.roomName, style: const TextStyle(fontSize: 18)),
                   ),
-                ),
-                Text('${_intensity.round()}%'),
-              ],
-            ),
-          ],
+                  Switch(
+                    value: _isOn,
+                    onChanged: widget.isEnabled ? _onSwitchChanged : null,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(LucideIcons.lightbulb),
+                  Expanded(
+                    child: Slider(
+                      value: _intensity,
+                      min: 0,
+                      max: 100,
+                      divisions: 100,
+                      label: _intensity.round().toString(),
+                      onChanged: widget.isEnabled ? (value) {
+                        _onSliderChanged(value);
+                      } : null,
+                    ),
+                  ),
+                  Text('${_intensity.round()}%'),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
