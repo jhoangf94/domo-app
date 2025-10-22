@@ -1,11 +1,10 @@
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer' as developer;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import 'package:bluetooth_classic/bluetooth_classic.dart';
+import 'package:bluetooth_classic/models/device.dart';
 import 'package:lucide_flutter/lucide_flutter.dart';
 
 void main() => runApp(const MyApp());
@@ -37,24 +36,36 @@ class BluetoothController extends StatefulWidget {
 }
 
 class BluetoothControllerState extends State<BluetoothController> {
-  BluetoothConnection? connection;
+  final _bluetoothClassicPlugin = BluetoothClassic();
   bool isConnecting = false;
-  bool get isConnected => connection != null && connection!.isConnected;
+  bool _isConnected = false;
   String? deviceName;
 
-  List<BluetoothDevice> _devicesList = [];
-  BluetoothDevice? _device;
+  List<Device> _devicesList = [];
+  Device? _device;
+  StreamSubscription<int>? _connectionStatusSubscription;
 
   @override
   void initState() {
     super.initState();
     _getPairedDevices();
+    _connectionStatusSubscription = _bluetoothClassicPlugin.onDeviceStatusChanged().listen((status) {
+      setState(() {
+        _isConnected = status == 1;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _connectionStatusSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _getPairedDevices() async {
-    List<BluetoothDevice> devices = [];
+    List<Device> devices = [];
     try {
-      devices = await FlutterBluetoothSerial.instance.getBondedDevices();
+      devices = await _bluetoothClassicPlugin.getPairedDevices();
     } catch (e) {
       developer.log('Error getting paired devices: $e');
     }
@@ -64,17 +75,17 @@ class BluetoothControllerState extends State<BluetoothController> {
     });
   }
 
-  void _connect(BluetoothDevice device) async {
+  void _connect(Device device) async {
     setState(() {
       isConnecting = true;
     });
 
     if (_device != null) {
-      await connection?.close();
+      await _bluetoothClassicPlugin.disconnect();
     }
 
     try {
-      connection = await BluetoothConnection.toAddress(device.address);
+      await _bluetoothClassicPlugin.connect(device.address, "00001101-0000-1000-8000-00805f9b34fb");
       deviceName = device.name;
       setState(() {
         _device = device;
@@ -89,9 +100,8 @@ class BluetoothControllerState extends State<BluetoothController> {
   }
 
   void _sendCommand(String command) async {
-    if (isConnected) {
-      connection!.output.add(Uint8List.fromList(utf8.encode("$command\n")));
-      await connection!.output.allSent;
+    if (_isConnected) {
+      await _bluetoothClassicPlugin.write("$command\n");
     }
   }
 
@@ -103,8 +113,8 @@ class BluetoothControllerState extends State<BluetoothController> {
         actions: <Widget>[
           IconButton(
             icon: Icon(
-              isConnected ? LucideIcons.bluetoothConnected : LucideIcons.bluetoothOff,
-              color: isConnected ? Colors.green : Colors.red,
+              _isConnected ? LucideIcons.bluetoothConnected : LucideIcons.bluetoothOff,
+              color: _isConnected ? Colors.green : Colors.red,
             ),
             onPressed: () {},
           ),
@@ -123,7 +133,7 @@ class BluetoothControllerState extends State<BluetoothController> {
                   child: Column(
                     children: [
                       Text(
-                        isConnected
+                        _isConnected
                             ? "Conectado a $deviceName"
                             : isConnecting
                                 ? "Conectando..."
@@ -209,7 +219,7 @@ class BluetoothControllerState extends State<BluetoothController> {
             child: ListView.builder(
               itemCount: _devicesList.length,
               itemBuilder: (context, index) {
-                BluetoothDevice device = _devicesList[index];
+                Device device = _devicesList[index];
                 return ListTile(
                   title: Text(device.name ?? "Dispositivo Desconocido"),
                   subtitle: Text(device.address),
