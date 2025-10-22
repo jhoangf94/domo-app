@@ -212,14 +212,15 @@ class BluetoothControllerState extends State<BluetoothController> {
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorOpen),
                         label: const Text('ABRIR PUERTA'),
                         onPressed: _isConnected ? () => _sendCommand('P:180') : null,
                       ),
+                      const SizedBox(height: 10),
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorClosed),
                         label: const Text('CERRAR PUERTA'),
