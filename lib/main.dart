@@ -292,7 +292,9 @@ class LightControlState extends State<LightControl> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(widget.roomName, style: const TextStyle(fontSize: 18)),
+                Expanded(
+                  child: Text(widget.roomName, style: const TextStyle(fontSize: 18)),
+                ),
                 Switch(
                   value: _isOn,
                   onChanged: _onSwitchChanged,
