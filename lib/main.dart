@@ -1,5 +1,5 @@
-
 import 'dart:async';
+import 'dart:convert'; // Necesario para codificar a bytes
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
@@ -16,6 +16,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Control Domótico BT',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         primaryColor: Colors.cyan,
         colorScheme: ColorScheme.dark().copyWith(
@@ -45,6 +46,22 @@ class BluetoothControllerState extends State<BluetoothController> {
   Device? _device;
   StreamSubscription<int>? _connectionStatusSubscription;
 
+  // --- NUEVA CLASE: Debouncer para comandos ---
+  // Esta clase asegura que las llamadas rápidas a _sendCommand se retrasen
+  // ligeramente para darle tiempo al Arduino de estabilizarse.
+  Timer? _debounceTimer;
+
+  // Función proxy que aplica el debouncer antes de llamar a _sendCommand
+  void _sendDebouncedCommand(String command) {
+    if (_debounceTimer?.isActive ?? false) {
+      _debounceTimer!.cancel();
+    }
+    // Retardo de 100ms. Suficiente para que el Arduino "respire" entre comandos
+    _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+      _sendCommand(command);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +76,7 @@ class BluetoothControllerState extends State<BluetoothController> {
   @override
   void dispose() {
     _connectionStatusSubscription?.cancel();
+    _debounceTimer?.cancel(); // Limpiar el timer al salir
     super.dispose();
   }
 
@@ -86,6 +104,7 @@ class BluetoothControllerState extends State<BluetoothController> {
     }
 
     try {
+      // Intenta conectar usando el UUID estándar de Serial Port Profile (SPP)
       await _bluetoothClassicPlugin.connect(device.address, "00001101-0000-1000-8000-00805f9b34fb");
       deviceName = device.name;
       setState(() {
@@ -100,7 +119,7 @@ class BluetoothControllerState extends State<BluetoothController> {
       developer.log('Error connecting to device: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text("No se pudo conectar al dispositivo. Asegúrese de que esté encendido y dentro del alcance."),
           backgroundColor: Colors.red,
         ),
@@ -112,14 +131,27 @@ class BluetoothControllerState extends State<BluetoothController> {
     await _bluetoothClassicPlugin.disconnect();
     setState(() {
       _isConnected = false;
+      _device = null; // Limpiar el dispositivo actual
+      deviceName = null;
     });
   }
 
+  // Función de envío de bajo nivel (llamada por _sendDebouncedCommand)
   void _sendCommand(String command) async {
     if (_isConnected) {
-      await _bluetoothClassicPlugin.write("$command\n");
+      // El comando completo incluye el salto de línea para el Arduino: "L1:255\n"
+      String fullCommand = "$command\n"; 
+      
+      try {
+        await _bluetoothClassicPlugin.writeBytes(utf8.encode(fullCommand));
+        // Retardo de 50ms (se mantiene) para asegurar que el buffer se limpie en el Arduino
+        await Future.delayed(const Duration(milliseconds: 50)); 
+      } catch (e) {
+        developer.log('Error al enviar comando: $e');
+      }
     }
   }
+  // --- FIN DE _sendCommand ---
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +182,7 @@ class BluetoothControllerState extends State<BluetoothController> {
                     children: [
                       Text(
                         _isConnected
-                            ? "Conectado a $deviceName"
+                            ? "Conectado a ${deviceName ?? 'Dispositivo'}"
                             : isConnecting
                                 ? "Conectando..."
                                 : "Desconectado",
@@ -161,7 +193,7 @@ class BluetoothControllerState extends State<BluetoothController> {
                         ElevatedButton.icon(
                           icon: const Icon(LucideIcons.search),
                           label: const Text('Buscar Dispositivos'),
-                          onPressed: () => _showDevicesDialog(),
+                          onPressed: isConnecting ? null : () => _showDevicesDialog(),
                         )
                       else
                         ElevatedButton.icon(
@@ -182,25 +214,29 @@ class BluetoothControllerState extends State<BluetoothController> {
               const SizedBox(height: 10),
               LightControl(
                 roomName: 'Sala de Estar (L1)',
-                onCommand: _sendCommand,
+                // CAMBIO: Usar el debouncer para el envío
+                onCommand: _sendDebouncedCommand,
                 label: 'L1',
                 isEnabled: _isConnected,
               ),
               LightControl(
                 roomName: 'Cocina (L2)',
-                onCommand: _sendCommand,
+                // CAMBIO: Usar el debouncer para el envío
+                onCommand: _sendDebouncedCommand,
                 label: 'L2',
                 isEnabled: _isConnected,
               ),
               LightControl(
                 roomName: 'Dormitorio Principal (L3)',
-                onCommand: _sendCommand,
+                // CAMBIO: Usar el debouncer para el envío
+                onCommand: _sendDebouncedCommand,
                 label: 'L3',
                 isEnabled: _isConnected,
               ),
               LightControl(
-                roomName: 'Baño (L4)',
-                onCommand: _sendCommand,
+                roomName: 'Segundo Dormitorio (L4)',
+                // CAMBIO: Usar el debouncer para el envío
+                onCommand: _sendDebouncedCommand,
                 label: 'L4',
                 isEnabled: _isConnected,
               ),
@@ -217,14 +253,16 @@ class BluetoothControllerState extends State<BluetoothController> {
                     children: [
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorOpen),
+                        // CAMBIO: Usar el debouncer para el envío
                         label: const Text('ABRIR PUERTA'),
-                        onPressed: _isConnected ? () => _sendCommand('P:180') : null,
+                        onPressed: _isConnected ? () => _sendDebouncedCommand('P:180') : null,
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorClosed),
+                        // CAMBIO: Usar el debouncer para el envío
                         label: const Text('CERRAR PUERTA'),
-                        onPressed: _isConnected ? () => _sendCommand('P:0') : null,
+                        onPressed: _isConnected ? () => _sendDebouncedCommand('P:0') : null,
                       ),
                     ],
                   ),
@@ -238,6 +276,9 @@ class BluetoothControllerState extends State<BluetoothController> {
   }
 
   void _showDevicesDialog() {
+    // Recargar dispositivos emparejados justo antes de mostrar el diálogo
+    _getPairedDevices(); 
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -245,21 +286,30 @@ class BluetoothControllerState extends State<BluetoothController> {
           title: const Text("Dispositivos Bluetooth"),
           content: SizedBox(
             width: double.maxFinite,
-            child: ListView.builder(
-              itemCount: _devicesList.length,
-              itemBuilder: (context, index) {
-                Device device = _devicesList[index];
-                return ListTile(
-                  title: Text(device.name ?? "Dispositivo Desconocido"),
-                  subtitle: Text(device.address),
-                  onTap: () {
-                    _connect(device);
-                    Navigator.of(context).pop();
-                  },
-                );
-              },
-            ),
+            child: _devicesList.isEmpty
+                ? const Center(child: Text("No se encontraron dispositivos emparejados."))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _devicesList.length,
+                    itemBuilder: (context, index) {
+                      Device device = _devicesList[index];
+                      return ListTile(
+                        title: Text(device.name ?? "Dispositivo Desconocido"),
+                        subtitle: Text(device.address),
+                        onTap: () {
+                          _connect(device);
+                          Navigator.of(context).pop();
+                        },
+                      );
+                    },
+                  ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
         );
       },
     );
@@ -267,8 +317,9 @@ class BluetoothControllerState extends State<BluetoothController> {
 }
 
 class LightControl extends StatefulWidget {
-  final String roomName;
+  // Nota: El tipo de onCommand ha cambiado a Function(String) para ajustarse al debouncer
   final Function(String) onCommand;
+  final String roomName;
   final String label;
   final bool isEnabled;
 
@@ -286,31 +337,43 @@ class LightControl extends StatefulWidget {
 
 class LightControlState extends State<LightControl> {
   bool _isOn = false;
-  double _intensity = 50.0;
+  double _intensity = 50.0; 
 
   void _onSwitchChanged(bool value) {
     setState(() {
       _isOn = value;
     });
-    if (!_isOn) {
+    // Si se apaga, enviar 0 PWM
+    if (!value) {
       widget.onCommand('${widget.label}:0');
     } else {
-      _onSliderChanged(_intensity);
+      // Si se enciende, enviar la última intensidad conocida (o 50% si nunca se movió)
+      _sendIntensityCommand(_intensity);
     }
   }
 
-  void _onSliderChanged(double value) {
+  // Función que ahora solo es llamada por onChangeEnd
+  void _onSliderCommandEnd(double value) {
+    // Actualiza el estado final y envía el comando
     setState(() {
       _intensity = value;
     });
-    int pwmValue = (_intensity * 2.55).round();
-    widget.onCommand('${widget.label}:$pwmValue');
+    _sendIntensityCommand(value);
+
+    // Si el slider se mueve de 0 a un valor > 0, encender el switch
     if (!_isOn && _intensity > 0) {
       setState(() {
         _isOn = true;
       });
     }
   }
+
+  void _sendIntensityCommand(double intensity) {
+    // Conversión de 0-100 a 0-255 (PWM)
+    int pwmValue = (intensity * 2.55).round();
+    widget.onCommand('${widget.label}:$pwmValue');
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -346,8 +409,13 @@ class LightControlState extends State<LightControl> {
                       divisions: 100,
                       label: _intensity.round().toString(),
                       onChanged: widget.isEnabled ? (value) {
-                        _onSliderChanged(value);
+                        // Solo actualizar la UI, no enviar el comando
+                        setState(() {
+                          _intensity = value;
+                        });
                       } : null,
+                      // El comando se envía SOLO cuando el usuario suelta el slider.
+                      onChangeEnd: widget.isEnabled ? _onSliderCommandEnd : null, 
                     ),
                   ),
                   Text('${_intensity.round()}%'),
