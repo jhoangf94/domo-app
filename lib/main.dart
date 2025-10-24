@@ -255,14 +255,14 @@ class BluetoothControllerState extends State<BluetoothController> {
                         icon: const Icon(LucideIcons.doorOpen),
                         // CAMBIO: Usar el debouncer para el envío
                         label: const Text('ABRIR PUERTA'),
-                        onPressed: _isConnected ? () => _sendDebouncedCommand('P:180') : null,
+                        onPressed: _isConnected ? () => _sendDebouncedCommand('P:0') : null,
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton.icon(
                         icon: const Icon(LucideIcons.doorClosed),
                         // CAMBIO: Usar el debouncer para el envío
                         label: const Text('CERRAR PUERTA'),
-                        onPressed: _isConnected ? () => _sendDebouncedCommand('P:0') : null,
+                        onPressed: _isConnected ? () => _sendDebouncedCommand('P:170') : null,
                       ),
                     ],
                   ),
