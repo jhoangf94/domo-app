@@ -1,6 +1,6 @@
 {
-    "name": "myapp",
-    "short_name": "myapp",
+    "name": "domoapp",
+    "short_name": "domoapp",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
