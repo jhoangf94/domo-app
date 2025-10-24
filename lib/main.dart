@@ -369,7 +369,7 @@ class LightControlState extends State<LightControl> {
   }
 
   void _sendIntensityCommand(double intensity) {
-    // Conversión de 0-100 a 0-255 (PWM)
+    // Conversión de 5-100 a 0-255 (PWM)
     int pwmValue = (intensity * 2.55).round();
     widget.onCommand('${widget.label}:$pwmValue');
   }
@@ -404,7 +404,7 @@ class LightControlState extends State<LightControl> {
                   Expanded(
                     child: Slider(
                       value: _intensity,
-                      min: 0,
+                      min: 5,
                       max: 100,
                       divisions: 100,
                       label: _intensity.round().toString(),
